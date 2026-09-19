@@ -29,6 +29,7 @@ input,select{width:100%;background:#101214;color:#eee;border:1px solid #40464b;b
 .set-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line)}.set-title{font-size:19px;font-weight:700}.badges{display:flex;gap:6px;flex-wrap:wrap}.badge{background:#30353a;border:1px solid #454b50;border-radius:999px;padding:3px 8px;font-size:11px}
 .slot-row{display:grid;grid-template-columns:95px 1fr 48px 34px;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid #292e32}.slot-label{color:#c8cdd1;font-weight:650}.slot-name{min-width:0}.slot-name b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.empty{color:#747b80}.slot-stat{font-size:11px;color:#aaa;text-align:right}.icon-btn{width:32px;height:32px;border-radius:6px;border:1px solid #454b50;background:#24292d;color:#ddd}
 .summary{padding:14px;display:grid;gap:12px;min-width:0}.statgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.stat{background:#15181a;border:1px solid #30353a;border-radius:7px;padding:8px}.stat label{display:block;color:#8e969d;font-size:10px;text-transform:uppercase}.stat b{font-size:16px}.res{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}.res div{background:#15181a;border:1px solid #30353a;border-radius:7px;text-align:center;padding:9px 6px;min-width:0}.res small{display:block;color:#8e969d;font-size:11px;margin-bottom:2px}.res b{font-size:16px}.positive{color:var(--good)}.negative{color:var(--bad)}
+.material-list{display:grid;gap:6px;max-height:260px;overflow:auto}.material{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:7px 9px;background:#15181a;border:1px solid #30353a;border-radius:6px}.material-name{min-width:0;overflow-wrap:anywhere}.material-qty{font-weight:800;color:#f0c75e;white-space:nowrap}.material-empty{padding:8px 9px;color:#8e969d;background:#15181a;border:1px solid #30353a;border-radius:6px}
 .skill-list{display:grid;gap:7px;max-height:440px;min-height:180px;overflow:auto}.skill{display:flex;justify-content:space-between;gap:12px;padding:9px 10px;background:#15181a;border-radius:6px}.skill>b,.skill div:first-child{min-width:0}.skill>span{font-size:12px;text-align:right;white-space:nowrap;color:#d7c98d;align-self:flex-start}.skill.on{border-left:3px solid var(--good)}.skill.off{border-left:3px solid #6d4d4d}.skill span:last-child{font-weight:800}.skill-main{min-width:0}.skill-name{font-weight:700;overflow-wrap:anywhere}.skill-detail{font-size:12px;margin-top:3px;line-height:1.35;overflow-wrap:anywhere}
 .decorations{padding:12px}.deco-row{display:grid;grid-template-columns:1fr 60px 34px;gap:7px;align-items:center;margin-bottom:6px}.deco-row select{padding:6px}.deco-row input{padding:6px;text-align:center}
 .status{padding:9px 12px;color:var(--muted);font-size:12px;border-bottom:1px solid var(--line)}
@@ -87,6 +88,8 @@ footer{padding:12px 2px;color:#70787f;font-size:11px;text-align:center}
         <div class="stat"><label>Armor pieces</label><b id="pieceCount">0 / 5</b></div>
         <div class="stat"><label>Used slots</label><b id="usedSlots">0 / 0</b></div>
       </div>
+      <h2 style="margin:4px -12px 0">Material Cost</h2>
+      <div class="material-list" id="materials"></div>
     </aside>
   </div>
 </section>
@@ -164,15 +167,34 @@ function renderItems(){
     renderAll();
   });
 }
+function materialEntries(obj){
+  return obj?.materials ?? obj?.['material-cost'] ?? obj?.['material_cost'] ?? null;
+}
+function addMaterials(tally, source, multiplier=1){
+  if(!Array.isArray(source)) return;
+  source.forEach(x=>{
+    if(!x) return;
+    const name=x.name ?? x.item ?? x.material ?? x['item-name'];
+    const qty=Number(x.amount ?? x.quantity ?? x.qty ?? x.count ?? 1);
+    if(name) tally[String(name)]=(tally[String(name)]||0)+(Number.isFinite(qty)?qty:1)*multiplier;
+  });
+}
 function totals(){
-  const pts={}, res={fire:0,water:0,thundr:0,ice:0,dragon:0}, parts=Object.values(set).filter(Boolean);
+  const pts={}, res={fire:0,water:0,thundr:0,ice:0,dragon:0}, materials={}, parts=Object.values(set).filter(Boolean);
   parts.forEach(a=>{
     (a['skill-points']||[]).forEach(s=>pts[s.name]=(pts[s.name]||0)+s.points);
     ['fire','water','thundr','ice','dragon'].forEach(k=>res[k]+=Number(a[k+'-res']||0));
+    addMaterials(materials, materialEntries(a));
   });
-  decoRows.forEach(d=>{const x=decos[d.id]; if(!x)return; const qty=Math.max(1,Number(d.qty)||1); (x['skill-points']||[]).forEach(s=>pts[s.name]=(pts[s.name]||0)+Number(s.points||0)*qty)});
-  return {pts,res,parts,slots:parts.reduce((n,a)=>n+a.slots,0)};
+  decoRows.forEach(d=>{
+    const x=decos[d.id]; if(!x)return;
+    const qty=Math.max(1,Number(d.qty)||1);
+    (x['skill-points']||[]).forEach(s=>pts[s.name]=(pts[s.name]||0)+Number(s.points||0)*qty);
+    addMaterials(materials, materialEntries(x), qty);
+  });
+  return {pts,res,materials,parts,slots:parts.reduce((n,a)=>n+a.slots,0)};
 }
+
 function skillProgress(skillPoint, points){
   const entries=(skills||[]).filter(s=>String(s['skill-point']||'')===String(skillPoint)).sort((a,b)=>Number(a.points)-Number(b.points));
   if(!entries.length) return {name:skillPoint, nextText:points===0?'10 points to activate':'No skill definition found', active:false};
@@ -224,12 +246,48 @@ function renderSet(){
     return `<div class="skill ${meta.active?'on':'off'}"><div class="skill-main"><div class="skill-name">${esc(meta.name)}</div><div class="skill-detail ${cls}">${p>0?'+':''}${p} points${meta.active?' · ACTIVE':''}${meta.nextText?' · '+esc(meta.nextText):''}</div></div><span class="${cls}">${p>0?'+':''}${p}</span></div>`;
   }).join('')||'<div class="hint">Select armor to see skill totals.</div>';
   $('res').innerHTML=[['F','fire'],['W','water'],['T','thundr'],['I','ice'],['D','dragon']].map(([l,k])=>{const v=Number(t.res[k]||0);return `<div><small>${l}</small><b class="${v<0?'negative':v>0?'positive':''}">${v>0?'+':''}${v}</b></div>`}).join('');
+  const mats=Object.entries(t.materials).filter(([,q])=>Number(q)>0).sort((a,b)=>a[0].localeCompare(b[0]));
+  $('materials').innerHTML=mats.length ? mats.map(([name,q])=>`<div class="material"><div class="material-name">${esc(name)}</div><div class="material-qty">×${q}</div></div>`).join('') : '<div class="material-empty">No material cost available for the selected armor/decorations.</div>';
+}
+function uniqueDecorations(){
+  const seen=new Set(), out=[];
+  decos.forEach((x,i)=>{
+    const key=String(x.name||'').trim().toLowerCase();
+    if(!key || seen.has(key)) return;
+    seen.add(key);
+    out.push({x,i});
+  });
+  return out;
 }
 function renderDecos(){
-  $('decos').innerHTML=decoRows.map((d,i)=>`<div class="deco-row"><select data-deco="${i}"><option value="">— empty —</option>${decos.map((x,j)=>`<option value="${j}" ${j===d.id?'selected':''}>${esc(x.name)} (${x.slots}★)</option>`).join('')}</select><input type="number" min="1" max="9" value="${d.qty}" data-qty="${i}"><button class="icon-btn" data-rm="${i}">×</button></div>`).join('');
-  document.querySelectorAll('[data-deco]').forEach(s=>s.onchange=()=>{decoRows[Number(s.dataset.deco)].id=Number(s.value);renderAll()});
-  document.querySelectorAll('[data-qty]').forEach(s=>s.onchange=()=>{decoRows[Number(s.dataset.qty)].qty=Math.max(1,Number(s.value)||1);renderAll()});
-  document.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{decoRows.splice(Number(b.dataset.rm),1);renderAll()});
+  $('decos').innerHTML=decoRows.map((d,i)=>{
+    const current=Number(d.id);
+    const options=decos.map((x,j)=>{
+      const selected=current===j ? 'selected' : '';
+      return `<option value="${j}" ${selected}>${esc(x.name)} (${x.slots}★)</option>`;
+    }).join('');
+    return `<div class="deco-row"><select data-deco="${i}"><option value="-1" ${current<0?'selected':''}>— empty —</option>${options}</select><input type="number" min="1" max="9" value="${Math.max(1,Number(d.qty)||1)}" data-qty="${i}"><button class="icon-btn" data-rm="${i}">×</button></div>`;
+  }).join('');
+
+  document.querySelectorAll('[data-deco]').forEach(s=>{
+    s.onchange=()=>{
+      const row=Number(s.dataset.deco);
+      decoRows[row].id=Number(s.value);
+      renderAll();
+    };
+  });
+  document.querySelectorAll('[data-qty]').forEach(s=>{
+    s.onchange=()=>{
+      decoRows[Number(s.dataset.qty)].qty=Math.max(1,Number(s.value)||1);
+      renderAll();
+    };
+  });
+  document.querySelectorAll('[data-rm]').forEach(b=>{
+    b.onclick=()=>{
+      decoRows.splice(Number(b.dataset.rm),1);
+      renderAll();
+    };
+  });
 }
 function renderAll(){renderParts();renderItems();renderSet();renderDecos()}
 function save(){localStorage.mhfuSetBuilder=JSON.stringify({set,decoRows});$('status').textContent='Build saved locally.'}
@@ -267,7 +325,7 @@ async function init(){
 }
 ['search'].forEach(id=>$(id).oninput=renderItems);
 ['hunter','sex','rare','minSlots'].forEach(id=>$(id).onchange=renderItems);
-$('addDeco').onclick=()=>{decoRows.push({id:-1,qty:1});renderDecos()};
+$('addDeco').onclick=()=>{decoRows.push({id:-1,qty:1});renderAll()};
 $('reset').onclick=()=>{set={helmet:null,plate:null,gauntlet:null,waist:null,legging:null};decoRows=[];renderAll()};
 $('save').onclick=save;$('load').onclick=load;$('copy').onclick=copyBuild;
 init();
